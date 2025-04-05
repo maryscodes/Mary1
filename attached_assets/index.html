@@ -175,8 +175,15 @@
 
                 const result = await response.json();
                 if (response.ok) {
-                    // Display success message only after the message is sent
+                    // Display success message
                     document.getElementById('successMessage').style.display = 'block';
+                    // Reset form
+                    e.target.reset();
+                    // Clear image preview
+                    imagePreview.innerHTML = '';
+                    // Clear preview box
+                    document.getElementById('previewBox').style.display = 'none';
+                    document.getElementById('previewContent').innerText = '';
                 } else {
                     alert('Failed to send message.');
                 }
