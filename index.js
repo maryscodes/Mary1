@@ -57,7 +57,7 @@ app.post('/sendMessage', upload.single('image'), async (req, res) => {
         const { alias, message, video_id, link } = req.body;
         const senderAlias = alias || 'Anonymous';
         
-        let messageText = `${senderAlias}: ${message}`;
+        let messageText = `${senderAlias}${req.body.reply_to ? ` → @${req.body.reply_to}` : ''}: ${message}`;
         if (link) messageText += `\nLink: ${link}`;
         if (video_id) messageText += `\nVideo ID: ${video_id}`;
         if (req.body.queue && req.body.queue.trim()) messageText += `\nQueue: ${req.body.queue}`;
