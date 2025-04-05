@@ -60,7 +60,7 @@ app.post('/sendMessage', upload.single('image'), async (req, res) => {
         let messageText = `${senderAlias}: ${message}`;
         if (link) messageText += `\nLink: ${link}`;
         if (video_id) messageText += `\nVideo ID: ${video_id}`;
-        if (req.body.queue) messageText += `\nQueue: ${req.body.queue}`;
+        if (req.body.queue && req.body.queue.trim()) messageText += `\nQueue: ${req.body.queue}`;
 
         let messagePayload;
         
