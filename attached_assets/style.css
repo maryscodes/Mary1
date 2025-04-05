@@ -29,7 +29,7 @@ body {
 
 h1 {
     font-size: 2.5rem;
-    background: linear-gradient(135deg, #4a5568 0%, #2d3748 100%);
+    background: linear-gradient(135deg, #3370FF 0%, #2952CC 100%);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     margin-bottom: 2rem;
@@ -86,7 +86,7 @@ textarea {
 
 button {
     width: 100%;
-    background: linear-gradient(135deg, #4a5568 0%, #2d3748 100%);
+    background: linear-gradient(135deg, #3370FF 0%, #2952CC 100%);
     color: white;
     padding: 1rem;
     border: none;
