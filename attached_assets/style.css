@@ -170,3 +170,17 @@ button:active {
     color: #aaa;
     opacity: 0.8;
 }
+
+.preview-box {
+    margin: 20px 0;
+    padding: 15px;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    background: #f9f9f9;
+}
+
+.preview-box h3 {
+    margin: 0 0 10px 0;
+    color: #666;
+    font-size: 14px;
+}

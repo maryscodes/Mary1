@@ -38,6 +38,10 @@
                 <label for="message">Message:</label>
                 <textarea id="message" name="message" placeholder="Enter Message"></textarea>
             </div>
+            <div class="preview-box" id="previewBox" style="display: none;">
+                <h3>Preview:</h3>
+                <div id="previewContent"></div>
+            </div>
             <div class="form-group">
                 <label for="image">Image:</label>
                 <div class="upload-zone" id="uploadZone">
@@ -128,6 +132,28 @@
             };
             reader.readAsDataURL(file);
         }
+
+        function updatePreview() {
+            const alias = document.getElementById('alias').value || 'Anonymous';
+            const replyTo = document.getElementById('reply_to').value;
+            const message = document.getElementById('message').value;
+            const videoId = document.getElementById('video_id').value;
+            const link = document.getElementById('link').value;
+            const queue = document.getElementById('queue').value;
+
+            let previewText = `${alias}${replyTo ? ` → @${replyTo}` : ''}: ${message}`;
+            if (link) previewText += `\nLink: ${link}`;
+            if (videoId) previewText += `\nVideo ID: ${videoId}`;
+            if (queue) previewText += `\nQueue: ${queue}`;
+
+            document.getElementById('previewContent').innerText = previewText;
+            document.getElementById('previewBox').style.display = message ? 'block' : 'none';
+        }
+
+        // Add input listeners for preview
+        ['alias', 'reply_to', 'message', 'video_id', 'link', 'queue'].forEach(id => {
+            document.getElementById(id).addEventListener('input', updatePreview);
+        });
 
         document.getElementById('messageForm').addEventListener('submit', async (e) => {
             e.preventDefault();
