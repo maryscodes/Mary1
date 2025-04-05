@@ -37,9 +37,20 @@ form {
     flex-direction: column;
 }
 
+.form-row {
+    display: flex;
+    gap: 15px;
+    margin-bottom: 15px;
+}
+
 .form-group {
     margin-bottom: 15px;
     text-align: left;
+}
+
+.form-group.half {
+    flex: 1;
+    margin-bottom: 0;
 }
 
 label {
