@@ -104,30 +104,3 @@ input[type="file"] {
     padding: 5px;
 }
 
-.queue-section {
-    margin-top: 20px;
-    border-top: 1px solid #eee;
-    padding-top: 20px;
-}
-
-.queue-section h2 {
-    color: #6a5acd;
-    margin-bottom: 10px;
-    font-size: 20px;
-}
-
-.queue-list {
-    max-height: 200px;
-    overflow-y: auto;
-    border: 1px solid #eee;
-    border-radius: 5px;
-    padding: 10px;
-}
-
-.queue-list:empty:before {
-    content: 'No messages in queue';
-    color: #999;
-    text-align: center;
-    display: block;
-    padding: 10px;
-}
