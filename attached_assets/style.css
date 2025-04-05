@@ -194,6 +194,20 @@ button:active {
     font-weight: 600;
 }
 
+.trademark {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    font-size: 0.7rem;
+    color: rgba(74, 85, 104, 0.3);
+    font-weight: 500;
+    letter-spacing: 1px;
+}
+
+.trademark:hover {
+    color: rgba(74, 85, 104, 0.6);
+}
+
 #previewContent {
     white-space: pre-wrap;
     line-height: 1.5;
