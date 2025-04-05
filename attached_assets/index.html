@@ -105,6 +105,13 @@
             }
         });
 
+        function removeImage() {
+            imageInput.value = '';
+            imagePreview.innerHTML = '';
+            const dataTransfer = new DataTransfer();
+            imageInput.files = dataTransfer.files;
+        }
+
         function handleImageFile(file) {
             // Create a new FileList object
             const dataTransfer = new DataTransfer();
@@ -114,7 +121,10 @@
             // Show preview
             const reader = new FileReader();
             reader.onload = (e) => {
-                imagePreview.innerHTML = `<img src="${e.target.result}" alt="Preview">`;
+                imagePreview.innerHTML = `
+                    <div class="remove-image" onclick="removeImage()">×</div>
+                    <img src="${e.target.result}" alt="Preview">
+                `;
             };
             reader.readAsDataURL(file);
         }
