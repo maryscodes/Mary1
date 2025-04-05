@@ -66,7 +66,11 @@ app.post('/sendMessage', upload.single('image'), async (req, res) => {
         if (req.file) {
             // Upload image first
             const formData = new FormData();
-            formData.append('image', fs.createReadStream(req.file.path));
+            formData.append('image_type', 'message');
+            formData.append('image', fs.createReadStream(req.file.path), {
+                filename: req.file.originalname || 'image.png',
+                contentType: req.file.mimetype || 'image/png'
+            });
             
             const imageResponse = await axios.post(
                 'https://open.feishu.cn/open-apis/im/v1/images',
