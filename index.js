@@ -40,10 +40,17 @@ async function ensureValidToken() {
     }
 }
 
+const multer = require('multer');
+const FormData = require('form-data');
+const fs = require('fs');
+
+const upload = multer({ dest: 'uploads/' });
+
 app.use(express.json());
 app.use(express.static('attached_assets'));
+app.use('/uploads', express.static('uploads'));
 
-app.post('/sendMessage', async (req, res) => {
+app.post('/sendMessage', upload.single('image'), async (req, res) => {
     try {
         await ensureValidToken();
         
@@ -54,15 +61,67 @@ app.post('/sendMessage', async (req, res) => {
         if (link) messageText += `\nLink: ${link}`;
         if (video_id) messageText += `\nVideo ID: ${video_id}`;
 
-        const response = await axios.post(
-            'https://open.feishu.cn/open-apis/message/v3/send',
-            {
+        let messagePayload;
+        
+        if (req.file) {
+            // Upload image first
+            const formData = new FormData();
+            formData.append('image', fs.createReadStream(req.file.path));
+            
+            const imageResponse = await axios.post(
+                'https://open.feishu.cn/open-apis/im/v1/images',
+                formData,
+                {
+                    headers: {
+                        'Authorization': `Bearer ${tenantAccessToken}`,
+                        ...formData.getHeaders()
+                    }
+                }
+            );
+
+            const imageKey = imageResponse.data.data.image_key;
+            
+            messagePayload = {
+                open_chat_id: OPEN_CHAT_ID,
+                msg_type: 'image',
+                content: {
+                    image_key: imageKey
+                }
+            };
+
+            // Send text message first
+            await axios.post(
+                'https://open.feishu.cn/open-apis/message/v3/send',
+                {
+                    open_chat_id: OPEN_CHAT_ID,
+                    msg_type: 'text',
+                    content: {
+                        text: messageText
+                    }
+                },
+                {
+                    headers: {
+                        'Authorization': `Bearer ${tenantAccessToken}`,
+                        'Content-Type': 'application/json'
+                    }
+                }
+            );
+            
+            // Clean up uploaded file
+            fs.unlinkSync(req.file.path);
+        } else {
+            messagePayload = {
                 open_chat_id: OPEN_CHAT_ID,
                 msg_type: 'text',
                 content: {
                     text: messageText
                 }
-            },
+            };
+        }
+
+        const response = await axios.post(
+            'https://open.feishu.cn/open-apis/message/v3/send',
+            messagePayload,
             {
                 headers: {
                     'Authorization': `Bearer ${tenantAccessToken}`,

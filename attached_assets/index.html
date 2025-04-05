@@ -26,6 +26,11 @@
                 <label for="message">Message:</label>
                 <textarea id="message" name="message" placeholder="Enter Message"></textarea>
             </div>
+            <div class="form-group">
+                <label for="image">Image:</label>
+                <input type="file" id="image" name="image" accept="image/*">
+                <div id="imagePreview"></div>
+            </div>
             <button type="submit" id="sendBtn">Send</button>
         </form>
         <!-- Initially hidden success message -->
@@ -42,12 +47,7 @@
             const link = document.getElementById('link').value;
             const message = document.getElementById('message').value;
 
-            const formData = {
-                alias,
-                video_id,
-                link,
-                message
-            };
+            const formData = new FormData(e.target);
 
             // Reset success message visibility before sending
             document.getElementById('successMessage').style.display = 'none';
@@ -55,10 +55,7 @@
             try {
                 const response = await fetch('/sendMessage', {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify(formData)
+                    body: formData
                 });
                 
                 const result = await response.json();
