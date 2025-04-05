@@ -32,8 +32,13 @@
             </div>
             <div class="form-group">
                 <label for="image">Image:</label>
-                <input type="file" id="image" name="image" accept="image/*">
-                <div id="imagePreview"></div>
+                <div class="upload-zone" id="uploadZone">
+                    <input type="file" id="image" name="image" accept="image/*" style="display: none;">
+                    <div class="upload-text">
+                        Drop image here, click to upload, or paste from clipboard
+                    </div>
+                    <div id="imagePreview"></div>
+                </div>
             </div>
             <button type="submit" id="sendBtn">Send</button>
         </form>
@@ -44,6 +49,68 @@
         </div>
 
     <script>
+        const uploadZone = document.getElementById('uploadZone');
+        const imageInput = document.getElementById('image');
+        const imagePreview = document.getElementById('imagePreview');
+
+        // Handle click on upload zone
+        uploadZone.addEventListener('click', () => {
+            imageInput.click();
+        });
+
+        // Handle drag and drop
+        uploadZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            uploadZone.classList.add('dragover');
+        });
+
+        uploadZone.addEventListener('dragleave', () => {
+            uploadZone.classList.remove('dragover');
+        });
+
+        uploadZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            uploadZone.classList.remove('dragover');
+            const file = e.dataTransfer.files[0];
+            if (file && file.type.startsWith('image/')) {
+                handleImageFile(file);
+            }
+        });
+
+        // Handle paste from clipboard
+        document.addEventListener('paste', (e) => {
+            const items = e.clipboardData.items;
+            for (let item of items) {
+                if (item.type.startsWith('image/')) {
+                    const file = item.getAsFile();
+                    handleImageFile(file);
+                    break;
+                }
+            }
+        });
+
+        // Handle file input change
+        imageInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (file) {
+                handleImageFile(file);
+            }
+        });
+
+        function handleImageFile(file) {
+            // Create a new FileList object
+            const dataTransfer = new DataTransfer();
+            dataTransfer.items.add(file);
+            imageInput.files = dataTransfer.files;
+
+            // Show preview
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                imagePreview.innerHTML = `<img src="${e.target.result}" alt="Preview">`;
+            };
+            reader.readAsDataURL(file);
+        }
+
         document.getElementById('messageForm').addEventListener('submit', async (e) => {
             e.preventDefault();
             const alias = document.getElementById('alias').value;

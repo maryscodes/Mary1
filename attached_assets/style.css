@@ -100,7 +100,28 @@ input::placeholder, textarea::placeholder {
     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }
 
-input[type="file"] {
-    padding: 5px;
+.upload-zone {
+    border: 2px dashed #ccc;
+    border-radius: 5px;
+    padding: 20px;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    min-height: 100px;
+    position: relative;
+}
+
+.upload-zone:hover {
+    border-color: #6a5acd;
+}
+
+.upload-zone.dragover {
+    border-color: #6a5acd;
+    background-color: rgba(106, 90, 205, 0.1);
+}
+
+.upload-text {
+    color: #666;
+    margin-bottom: 10px;
 }
 
