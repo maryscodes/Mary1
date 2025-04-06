@@ -1,211 +1,183 @@
-const express = require('express');
-const axios = require('axios');
-const multer = require('multer');
-const FormData = require('form-data');
-const fs = require('fs');
+const express = require("express");
+const axios = require("axios");
+const multer = require("multer");
+const FormData = require("form-data");
+const fs = require("fs");
 
 const app = express();
-const port = 5000;
+const port = 5000; // Recommended port for development
 
 // Environment variables (recommended)
-const APP_ID = process.env.APP_ID || 'cli_a76cdc37ebf9900c';
-const APP_SECRET = process.env.APP_SECRET || 'oRXRWCjyt5EUKx5RNGltmeSOODjaxe7b';
-const OPEN_CHAT_ID = process.env.OPEN_CHAT_ID || 'oc_a19d2b2771fecbc58d1bf440550d942f';
+const APP_ID = process.env.APP_ID || "cli_a76cdc37ebf9900c";
+const APP_SECRET = process.env.APP_SECRET || "oRXRWCjyt5EUKx5RNGltmeSOODjaxe7b";
+const OPEN_CHAT_ID =
+    process.env.OPEN_CHAT_ID || "oc_a19d2b2771fecbc58d1bf440550d942f";
 
-// Use a single token management system
-let tokenManager = {
-    token: null,
-    expiryTime: null,
-    async ensure() {
-        if (!this.token || Date.now() >= this.expiryTime) {
-            try {
-                const response = await axios.post('https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal', {
-                    app_id: APP_ID,
-                    app_secret: APP_SECRET
-                });
+let tenantAccessToken = null;
+let tokenExpiryTime = null;
 
-                if (response.data?.tenant_access_token) {
-                    this.token = response.data.tenant_access_token;
-                    this.expiryTime = Date.now() + (response.data.expire * 1000) - 30000;
-                    return true;
-                }
-                return false;
-            } catch (error) {
-                console.error('Token error:', error.message);
-                return false;
-            }
-        }
-        return true;
-    }
-};
-
-// Configure multer with file size limits
-const upload = multer({
-    dest: 'uploads/',
-    limits: {
-        fileSize: 5 * 1024 * 1024, // 5MB limit
-        files: 1,
-        parts: 2, // body + single file
-        fieldSize: 1024 * 1024 // 1MB limit for text fields
-    }
-});
-
-app.use(express.json({ limit: '1mb' }));
-app.use(express.static('attached_assets'));
-app.use('/uploads', express.static('uploads', { maxAge: '1h' }));
-
-// Rate limiting configuration
-const rateLimit = {
-    windowMs: 60000, // 1 minute
-    maxRequests: 30,
-    current: new Map()
-};
-
-// Message queue for throttling
-const messageQueue = {
-    queue: [],
-    processing: false,
-    async process() {
-        if (this.processing || this.queue.length === 0) return;
-        this.processing = true;
-
-        while (this.queue.length > 0) {
-            const task = this.queue.shift();
-            try {
-                await task();
-            } catch (error) {
-                console.error('Queue processing error:', error);
-            }
-            // Add delay between messages
-            await new Promise(resolve => setTimeout(resolve, 200));
-        }
-
-        this.processing = false;
-    }
-};
-
-app.post('/sendMessage', upload.single('image'), async (req, res) => {
+// Function to get tenant access token
+async function getTenantAccessToken() {
     try {
-        // Handle multer upload errors
-        if (req.file === undefined && req.body.image) {
-            return res.status(400).json({ error: 'Invalid image' });
-        }
-        if (req.file === undefined && !req.body.image) {
-            // Handle other errors such as missing fields
-            if (!req.body.message) {
-                return res.status(400).json({ error: "Missing message field" });
-            }
-        }
-        if (req.fileValidationError) {
-            console.error('Upload error:', req.fileValidationError);
-            return res.status(400).json({ error: req.fileValidationError.message || 'Upload failed' });
-        }
+        const response = await axios.post(
+            "https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal",
+            {
+                app_id: APP_ID,
+                app_secret: APP_SECRET,
+            },
+        );
 
-        // Rate limiting check
-        const ip = req.ip;
-        const now = Date.now();
-        const userRequests = rateLimit.current.get(ip) || [];
-        const validRequests = userRequests.filter(time => now - time < rateLimit.windowMs);
-
-        if (validRequests.length >= rateLimit.maxRequests) {
-            return res.status(429).json({ error: 'Too many requests' });
+        if (response.data && response.data.tenant_access_token) {
+            tenantAccessToken = response.data.tenant_access_token;
+            tokenExpiryTime = Date.now() + response.data.expire * 1000 - 30000; // 30s buffer
+            console.log(
+                "Token renewed successfully. Expires at:",
+                new Date(tokenExpiryTime),
+            );
+            return true;
         }
+        console.error("Failed to retrieve token:", response.data);
+        return false;
+    } catch (error) {
+        console.error(
+            "Error obtaining token:",
+            error.response?.data || error.message,
+        );
+        return false;
+    }
+}
 
-        validRequests.push(now);
-        rateLimit.current.set(ip, validRequests);
+// Middleware to ensure valid token
+async function ensureValidToken() {
+    if (!tenantAccessToken || Date.now() >= tokenExpiryTime) {
+        await getTenantAccessToken();
+    }
+}
 
-        if (!(await tokenManager.ensure())) {
-            return res.status(401).json({ error: 'Failed to obtain token' });
-        }
+const upload = multer({ dest: "uploads/" });
 
-        const { alias = 'Anonymous', message, video_id, link, reply_to, queue } = req.body;
-        let messageText = `${alias}${reply_to?.trim() ? ` → @${reply_to}` : ''}: ${message}`;
+app.use(express.json());
+app.use(express.static("attached_assets"));
+app.use("/uploads", express.static("uploads"));
+
+// Endpoint to check if the bot is alive
+app.get("/", (req, res) => res.send("Bot is alive!"));
+
+app.post("/sendMessage", upload.single("image"), async (req, res) => {
+    try {
+        await ensureValidToken();
+
+        const { alias, message, video_id, link } = req.body;
+        const senderAlias = alias || "Anonymous";
+
+        let messageText = `${senderAlias}${req.body.reply_to && req.body.reply_to.trim() ? ` → @${req.body.reply_to}` : ""}: ${message}`;
         if (link) messageText += `\nLink: ${link}`;
         if (video_id) messageText += `\nVideo ID: ${video_id}`;
-        if (queue?.trim()) messageText += `\nQueue: ${queue}`;
+        if (req.body.queue && req.body.queue.trim())
+            messageText += `\nQueue: ${req.body.queue}`;
 
-        const headers = {
-            'Authorization': `Bearer ${tokenManager.token}`,
-            'Content-Type': 'application/json'
-        };
+        let messagePayload;
 
-        // Queue the message sending
-        messageQueue.queue.push(async () => {
-            await axios.post(
-                'https://open.feishu.cn/open-apis/message/v3/send',
-                {
-                    open_chat_id: OPEN_CHAT_ID,
-                    msg_type: 'text',
-                    content: { text: messageText }
-                },
-                { headers }
-            );
-        });
-
-        // Start processing queue if not already processing
-        messageQueue.process();
-
-        // Handle image if present
         if (req.file) {
+            // Upload image first
             const formData = new FormData();
-            formData.append('image_type', 'message');
-            formData.append('image', fs.createReadStream(req.file.path));
+            formData.append("image_type", "message");
+            formData.append("image", fs.createReadStream(req.file.path), {
+                filename: req.file.originalname || "image.png",
+                contentType: req.file.mimetype || "image/png",
+            });
 
             const imageResponse = await axios.post(
-                'https://open.feishu.cn/open-apis/im/v1/images',
+                "https://open.feishu.cn/open-apis/im/v1/images",
                 formData,
                 {
                     headers: {
-                        'Authorization': `Bearer ${tokenManager.token}`,
-                        ...formData.getHeaders()
-                    }
-                }
-            );
-
-            await axios.post(
-                'https://open.feishu.cn/open-apis/message/v3/send',
-                {
-                    open_chat_id: OPEN_CHAT_ID,
-                    msg_type: 'image',
-                    content: { image_key: imageResponse.data.data.image_key }
+                        Authorization: `Bearer ${tenantAccessToken}`,
+                        ...formData.getHeaders(),
+                    },
                 },
-                { headers }
             );
 
-            // Cleanup uploaded file immediately after processing
-            await fs.promises.unlink(req.file.path).catch(console.error);
+            const imageKey = imageResponse.data.data.image_key;
 
-            // Cleanup old files in uploads directory periodically
-            const cleanupUploads = async () => {
-                const files = await fs.promises.readdir('uploads');
-                const now = Date.now();
-
-                for (const file of files) {
-                    try {
-                        const filePath = `uploads/${file}`;
-                        const stats = await fs.promises.stat(filePath);
-                        // Remove files older than 1 hour
-                        if (now - stats.mtime.getTime() > 3600000) {
-                            await fs.promises.unlink(filePath);
-                        }
-                    } catch (error) {
-                        console.error('Cleanup error:', error);
-                    }
-                }
+            messagePayload = {
+                open_chat_id: OPEN_CHAT_ID,
+                msg_type: "image",
+                content: {
+                    image_key: imageKey,
+                },
             };
 
-            // Schedule cleanup
-            setTimeout(cleanupUploads, 0);
+            // Send text message first
+            await axios.post(
+                "https://open.feishu.cn/open-apis/message/v3/send",
+                {
+                    open_chat_id: OPEN_CHAT_ID,
+                    msg_type: "text",
+                    content: {
+                        text: messageText,
+                    },
+                },
+                {
+                    headers: {
+                        Authorization: `Bearer ${tenantAccessToken}`,
+                        "Content-Type": "application/json",
+                    },
+                },
+            );
+
+            // Clean up uploaded file
+            fs.unlinkSync(req.file.path);
+        } else {
+            messagePayload = {
+                open_chat_id: OPEN_CHAT_ID,
+                msg_type: "text",
+                content: {
+                    text: messageText,
+                },
+            };
         }
 
-        res.status(200).json({ message: 'Message sent successfully!' });
+        const response = await axios.post(
+            "https://open.feishu.cn/open-apis/message/v3/send",
+            messagePayload,
+            {
+                headers: {
+                    Authorization: `Bearer ${tenantAccessToken}`,
+                    "Content-Type": "application/json",
+                },
+            },
+        );
+
+        res.status(200).json({
+            message: "Message sent successfully!",
+            data: response.data,
+        });
     } catch (error) {
-        console.error('Error:', error.message);
-        res.status(500).json({ error: 'Failed to send message' });
+        console.error("Full error details:", {
+            status: error.response?.status,
+            data: error.response?.data,
+            message: error.message,
+            config: error.config?.data,
+        });
+
+        if (error.response?.status === 401) {
+            await getTenantAccessToken();
+            return res.status(401).json({
+                error: "Token expired",
+                message: "Please try again",
+            });
+        }
+
+        res.status(500).json({
+            error: "Failed to send message",
+            details: error.response?.data || error.message,
+        });
     }
 });
 
-app.listen(port, '0.0.0.0', () => {
+// Start the server
+app.listen(port, "0.0.0.0", () => {
     console.log(`Server running at http://0.0.0.0:${port}`);
-    tokenManager.ensure();
+    getTenantAccessToken();
 });
