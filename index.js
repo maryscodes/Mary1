@@ -259,7 +259,6 @@ app.post('/sendMessage', (req, res) => {
         });
 
         try {
-            // Log to Google Sheets first
             await logToGoogleSheets({
                 timestamp: new Date().toISOString(),
                 userEmail: req.body.userEmail || 'Unknown',
@@ -272,7 +271,6 @@ app.post('/sendMessage', (req, res) => {
                 hasImage: !!req.file
             });
 
-            // Then send to Lark
             if (!(await tokenManager.ensure())) {
                 throw new Error('Failed to obtain Lark token');
             }
@@ -282,7 +280,6 @@ app.post('/sendMessage', (req, res) => {
                 'Content-Type': 'application/json'
             };
 
-            // Send text message
             const messageText = formatMessage(req.body);
             await axios.post(
                 'https://open.feishu.cn/open-apis/message/v3/send',
@@ -294,7 +291,6 @@ app.post('/sendMessage', (req, res) => {
                 { headers }
             );
 
-            // Handle image if present
             if (req.file) {
                 const formData = new FormData();
                 formData.append('image_type', 'message');
@@ -321,13 +317,16 @@ app.post('/sendMessage', (req, res) => {
                     { headers }
                 );
 
-                // Clean up uploaded file
                 fs.unlink(req.file.path, (err) => {
                     if (err) console.error('File cleanup error:', err);
                 });
             }
 
             res.status(200).json({ message: 'Message sent successfully!' });
+        } catch (error) {
+            console.error('Error:', error);
+            res.status(500).json({ error: 'Failed to send message', details: error.message });
+        }
         } catch (error) {
             console.error('Error:', error);
             res.status(500).json({ 
