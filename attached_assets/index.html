@@ -220,22 +220,12 @@
                     body: formData
                 });
 
+                // Show success message and reset form
                 document.getElementById('successMessage').style.display = 'block';
                 e.target.reset();
                 imagePreview.innerHTML = '';
                 document.getElementById('previewBox').style.display = 'none';
                 document.getElementById('previewContent').innerText = '';
-
-                const result = await response.json();
-                if (response.ok) {
-                    document.getElementById('successMessage').style.display = 'block';
-                    e.target.reset();
-                    imagePreview.innerHTML = '';
-                    document.getElementById('previewBox').style.display = 'none';
-                    document.getElementById('previewContent').innerText = '';
-                } else {
-                    alert('Failed to send message.');
-                }
             } catch (error) {
                 console.error('Error:', error);
             }
