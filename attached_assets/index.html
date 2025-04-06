@@ -157,7 +157,13 @@
             document.getElementById(id).addEventListener('input', updatePreview);
         });
 
-        document.getElementById('messageForm').addEventListener('submit', async (e) => {
+        // Check login
+if (!sessionStorage.getItem('userEmail')) {
+    window.location.href = '/';
+}
+
+document.getElementById('messageForm').addEventListener('submit', async (e) => {
+    const userEmail = sessionStorage.getItem('userEmail');
             e.preventDefault();
             const alias = document.getElementById('alias').value;
             const video_id = document.getElementById('video_id').value;
@@ -165,6 +171,7 @@
             const message = document.getElementById('message').value;
 
             const formData = new FormData(e.target);
+            formData.append('userEmail', userEmail);
 
             // Reset success message visibility before sending
             document.getElementById('successMessage').style.display = 'none';
