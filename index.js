@@ -43,10 +43,16 @@ let tokenManager = {
 const upload = multer({
     dest: 'uploads/',
     limits: {
-        fileSize: 5 * 1024 * 1024, // 5MB limit
+        fileSize: 2 * 1024 * 1024, // 2MB limit
         files: 1,
-        parts: 2, // body + single file
-        fieldSize: 1024 * 1024 // 1MB limit for text fields
+        parts: 2,
+        fieldSize: 512 * 1024, // 512KB limit for text fields
+    },
+    fileFilter: (req, file, cb) => {
+        if (!file.originalname.match(/\.(jpg|jpeg|png|gif)$/)) {
+            return cb(new Error('Only image files are allowed!'));
+        }
+        cb(null, true);
     }
 });
 
@@ -65,24 +71,44 @@ const rateLimit = {
 const messageQueue = {
     queue: [],
     processing: false,
+    batchSize: 5,
+    batchTimeout: 2000,
+    timer: null,
+
     async process() {
         if (this.processing || this.queue.length === 0) return;
         this.processing = true;
         
-        while (this.queue.length > 0) {
-            const task = this.queue.shift();
-            try {
-                await task();
-            } catch (error) {
-                console.error('Queue processing error:', error);
+        try {
+            while (this.queue.length > 0) {
+                const batch = this.queue.splice(0, this.batchSize);
+                await Promise.all(batch.map(task => task().catch(console.error)));
+                await new Promise(resolve => setTimeout(resolve, 200));
+                
+                // Force garbage collection between batches
+                if (global.gc) global.gc();
             }
-            // Add delay between messages
-            await new Promise(resolve => setTimeout(resolve, 200));
+        } catch (error) {
+            console.error('Batch processing error:', error);
+        } finally {
+            this.processing = false;
         }
-        
-        this.processing = false;
     }
 };
+
+// Cleanup function to run periodically
+setInterval(() => {
+    // Clear rate limit data older than the window
+    const now = Date.now();
+    for (const [ip, times] of rateLimit.current.entries()) {
+        const validTimes = times.filter(time => now - time < rateLimit.windowMs);
+        if (validTimes.length === 0) {
+            rateLimit.current.delete(ip);
+        } else {
+            rateLimit.current.set(ip, validTimes);
+        }
+    }
+}, 60000);
 
 app.post('/sendMessage', upload.single('image'), async (req, res) => {
     try {
