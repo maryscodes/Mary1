@@ -258,11 +258,17 @@ app.post('/sendMessage', (req, res) => {
                 hasImage: !!req.file
             });
 
+            // Validate required fields
+            if (!req.body.message) {
+                return res.status(400).json({ error: 'Message is required' });
+            }
+
             res.status(200).json({ message: 'Message sent successfully!' });
         } catch (error) {
             console.error('Error:', error);
-            res.status(500).json({ 
-                error: 'Failed to send message', 
+            const errorMessage = error.response?.data?.message || error.message || 'Failed to send message';
+            res.status(error.response?.status || 500).json({ 
+                error: errorMessage,
                 details: error.message 
             });
         }

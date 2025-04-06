@@ -206,7 +206,7 @@
                 // Send to server first
                 const serverFormData = new FormData();
                 for (let [key, value] of formData.entries()) {
-                    if (key === 'image' && value.size === 0) continue;
+                    if (key === 'image' && (!value || value.size === 0)) continue;
                     serverFormData.append(key, value);
                 }
 
@@ -215,8 +215,10 @@
                     body: serverFormData
                 });
 
+                const responseData = await serverResponse.json();
+                
                 if (!serverResponse.ok) {
-                    throw new Error('Server request failed');
+                    throw new Error(responseData.error || 'Server request failed');
                 }
 
                 // Then send to Google Sheets
@@ -241,6 +243,10 @@
                 document.getElementById('previewContent').innerText = '';
             } catch (error) {
                 console.error('Error:', error);
+                const errorMessage = document.getElementById('successMessage');
+                errorMessage.style.color = 'red';
+                errorMessage.innerText = error.message || 'Failed to send message';
+                errorMessage.style.display = 'block';
             }
         });
     </script>
