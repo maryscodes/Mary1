@@ -8,7 +8,12 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 </head>
 <body>
-    <div class="container">
+    <div id="loginPage" style="display: none;">
+        <h1>Login</h1>
+        <input type="email" id="loginEmail" placeholder="Enter your ByteDance or Lark email">
+        <button id="loginButton">Login</button>
+    </div>
+    <div class="container" id="appContainer" style="display: none;">
         <h1>ModQuery</h1>
         <form id="messageForm">
             <div class="form-row">
@@ -60,12 +65,17 @@
             <p>Message sent successfully!</p>
         </div>
         <div class="trademark">MIRI™</div>
-        </div>
+    </div>
 
     <script>
         const uploadZone = document.getElementById('uploadZone');
         const imageInput = document.getElementById('image');
         const imagePreview = document.getElementById('imagePreview');
+        const loginPage = document.getElementById('loginPage');
+        const appContainer = document.getElementById('appContainer');
+        const loginEmailInput = document.getElementById('loginEmail');
+        const loginButton = document.getElementById('loginButton');
+
 
         // Handle click on upload zone
         uploadZone.addEventListener('click', () => {
@@ -119,12 +129,10 @@
         }
 
         function handleImageFile(file) {
-            // Create a new FileList object
             const dataTransfer = new DataTransfer();
             dataTransfer.items.add(file);
             imageInput.files = dataTransfer.files;
 
-            // Show preview
             const reader = new FileReader();
             reader.onload = (e) => {
                 imagePreview.innerHTML = `
@@ -152,45 +160,59 @@
             document.getElementById('previewBox').style.display = message ? 'block' : 'none';
         }
 
-        // Add input listeners for preview
         ['alias', 'reply_to', 'message', 'video_id', 'link', 'queue'].forEach(id => {
             document.getElementById(id).addEventListener('input', updatePreview);
         });
 
-        // Check login
-if (!sessionStorage.getItem('userEmail')) {
-    window.location.href = '/';
-}
 
-document.getElementById('messageForm').addEventListener('submit', async (e) => {
-    const userEmail = sessionStorage.getItem('userEmail');
+        loginButton.addEventListener('click', () => {
+            const email = loginEmailInput.value;
+            if (email.includes('@bytedance.com') || email.includes('@lark.com')) {
+                sessionStorage.setItem('userEmail', email);
+                loginPage.style.display = 'none';
+                appContainer.style.display = 'block';
+            } else {
+                alert('Please use a ByteDance or Lark email.');
+            }
+        });
+
+        if (!sessionStorage.getItem('userEmail')) {
+            loginPage.style.display = 'block';
+        } else {
+            appContainer.style.display = 'block';
+        }
+
+
+        document.getElementById('messageForm').addEventListener('submit', async (e) => {
+            const userEmail = sessionStorage.getItem('userEmail');
             e.preventDefault();
             const alias = document.getElementById('alias').value;
-            const video_id = document.getElementById('video_id').value;
+            const replyTo = document.getElementById('reply_to').value;
+            const videoId = document.getElementById('video_id').value;
+            const queue = document.getElementById('queue').value;
             const link = document.getElementById('link').value;
             const message = document.getElementById('message').value;
+            const imageFile = imageInput.files[0];
 
             const formData = new FormData(e.target);
             formData.append('userEmail', userEmail);
+            formData.append('timestamp', new Date().toISOString());
+            if (imageFile) formData.append('image', imageFile);
 
-            // Reset success message visibility before sending
+
             document.getElementById('successMessage').style.display = 'none';
 
             try {
-                const response = await fetch('/sendMessage', {
+                const response = await fetch('https://script.google.com/macros/s/AKfycbx5fV54P_VOYSBTozPPBOe7w0FCM4pN_yfPYkXMbsL4_GQ4Rn8omVp_N9ve2D-c75gk/exec', {
                     method: 'POST',
                     body: formData
                 });
 
                 const result = await response.json();
                 if (response.ok) {
-                    // Display success message
                     document.getElementById('successMessage').style.display = 'block';
-                    // Reset form
                     e.target.reset();
-                    // Clear image preview
                     imagePreview.innerHTML = '';
-                    // Clear preview box
                     document.getElementById('previewBox').style.display = 'none';
                     document.getElementById('previewContent').innerText = '';
                 } else {

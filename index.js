@@ -98,13 +98,13 @@ const messageQueue = {
     async process() {
         if (this.processing || this.queue.length === 0) return;
         this.processing = true;
-        
+
         try {
             while (this.queue.length > 0) {
                 const batch = this.queue.splice(0, this.batchSize);
                 await Promise.all(batch.map(task => task().catch(console.error)));
                 await new Promise(resolve => setTimeout(resolve, 200));
-                
+
                 // Force garbage collection between batches
                 if (global.gc) global.gc();
             }
@@ -148,11 +148,11 @@ app.post('/sendMessage', upload.single('image'), async (req, res) => {
         const now = Date.now();
         const userRequests = rateLimit.current.get(ip) || [];
         const validRequests = userRequests.filter(time => now - time < rateLimit.windowMs);
-        
+
         if (validRequests.length >= rateLimit.maxRequests) {
             return res.status(429).json({ error: 'Too many requests' });
         }
-        
+
         validRequests.push(now);
         rateLimit.current.set(ip, validRequests);
 
@@ -160,7 +160,7 @@ app.post('/sendMessage', upload.single('image'), async (req, res) => {
             return res.status(401).json({ error: 'Failed to obtain token' });
         }
 
-        const { alias = 'Anonymous', message, video_id, link, reply_to, queue } = req.body;
+        const { alias = 'Anonymous', message, video_id, link, reply_to, queue, userEmail } = req.body;
         let messageText = `${alias}${reply_to?.trim() ? ` → @${reply_to}` : ''}: ${message}`;
         if (link) messageText += `\nLink: ${link}`;
         if (video_id) messageText += `\nVideo ID: ${video_id}`;
@@ -216,12 +216,12 @@ app.post('/sendMessage', upload.single('image'), async (req, res) => {
 
             // Cleanup uploaded file immediately after processing
             await fs.promises.unlink(req.file.path).catch(console.error);
-            
+
             // Cleanup old files in uploads directory periodically
             const cleanupUploads = async () => {
                 const files = await fs.promises.readdir('uploads');
                 const now = Date.now();
-                
+
                 for (const file of files) {
                     try {
                         const filePath = `uploads/${file}`;
@@ -235,8 +235,7 @@ app.post('/sendMessage', upload.single('image'), async (req, res) => {
                     }
                 }
             };
-            
-            // Schedule cleanup
+
             setTimeout(cleanupUploads, 0);
         }
 
