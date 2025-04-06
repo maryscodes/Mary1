@@ -143,11 +143,12 @@ async function logToGoogleSheets(data) {
 
 app.post('/sendMessage', (req, res) => {
     upload(req, res, async (err) => {
-        if (err instanceof multer.MulterError) {
-            return res.status(400).json({ error: 'File upload error: ' + err.message });
-        } else if (err) {
-            return res.status(500).json({ error: 'Unknown error: ' + err.message });
-        }
+        try {
+            if (err instanceof multer.MulterError) {
+                return res.status(400).json({ error: 'File upload error: ' + err.message });
+            } else if (err) {
+                return res.status(500).json({ error: 'Unknown error: ' + err.message });
+            }
         try {
             // Rate limiting check
             const ip = req.ip;
@@ -272,6 +273,12 @@ app.post('/sendMessage', (req, res) => {
                 details: error.message 
             });
         }
+    } catch (error) {
+        console.error('Server Error:', error);
+        res.status(500).json({
+            error: 'Internal server error',
+            details: error.message
+        });
     });
 });
 

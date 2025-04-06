@@ -203,11 +203,21 @@
             document.getElementById('successMessage').style.display = 'none';
 
             try {
-                // Send to server first
+                if (!message.trim()) {
+                    throw new Error('Message is required');
+                }
+
                 const serverFormData = new FormData();
                 for (let [key, value] of formData.entries()) {
-                    if (key === 'image' && (!value || value.size === 0)) continue;
-                    serverFormData.append(key, value);
+                    if (key === 'image') {
+                        if (value && value.size > 0 && value.size <= 5 * 1024 * 1024) {
+                            serverFormData.append(key, value);
+                        } else if (value && value.size > 5 * 1024 * 1024) {
+                            throw new Error('Image size must be less than 5MB');
+                        }
+                    } else {
+                        serverFormData.append(key, value);
+                    }
                 }
 
                 const serverResponse = await fetch('/sendMessage', {
