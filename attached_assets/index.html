@@ -210,11 +210,16 @@
                 const serverFormData = new FormData();
                 for (let [key, value] of formData.entries()) {
                     if (key === 'image') {
-                        if (value && value.size > 0 && value.size <= 5 * 1024 * 1024) {
-                            serverFormData.append(key, value);
-                        } else if (value && value.size > 5 * 1024 * 1024) {
+                        if (!value || value.size === 0) {
+                            continue;
+                        }
+                        if (value.size > 5 * 1024 * 1024) {
                             throw new Error('Image size must be less than 5MB');
                         }
+                        if (!value.type.startsWith('image/')) {
+                            throw new Error('Only image files are allowed');
+                        }
+                        serverFormData.append(key, value);
                     } else {
                         serverFormData.append(key, value);
                     }
@@ -226,7 +231,7 @@
                 });
 
                 const responseData = await serverResponse.json();
-                
+
                 if (!serverResponse.ok) {
                     throw new Error(responseData.error || 'Server request failed');
                 }

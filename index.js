@@ -79,7 +79,9 @@ app.get('/form', (req, res) => {
 app.post('/sendMessage', async (req, res) => {
     upload(req, res, async (err) => {
         try {
-            if (err) {
+            if (err instanceof multer.MulterError) {
+                return res.status(400).json({ error: `Upload error: ${err.message}` });
+            } else if (err) {
                 return res.status(400).json({ error: err.message });
             }
 
