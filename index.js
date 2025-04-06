@@ -46,7 +46,7 @@ const upload = multer({
     limits: {
         fileSize: 5 * 1024 * 1024, // 5MB limit
         files: 1,
-        parts: 2,
+        parts: 20, // Increased parts limit to handle all form fields
         fieldSize: 512 * 1024, // 512KB limit for text fields
     },
     fileFilter: (req, file, cb) => {
@@ -55,7 +55,7 @@ const upload = multer({
         }
         cb(null, true);
     }
-});
+}).single('image'); // Explicitly declare we're handling a single 'image' field
 
 app.use(express.json({ limit: '1mb' }));
 // Middleware to check login
@@ -141,7 +141,13 @@ async function logToGoogleSheets(data) {
     }
 }
 
-app.post('/sendMessage', upload.single('image'), async (req, res) => {
+app.post('/sendMessage', (req, res) => {
+    upload(req, res, async (err) => {
+        if (err instanceof multer.MulterError) {
+            return res.status(400).json({ error: 'File upload error: ' + err.message });
+        } else if (err) {
+            return res.status(500).json({ error: 'Unknown error: ' + err.message });
+        }
     try {
         // Rate limiting check
         const ip = req.ip;
@@ -252,12 +258,94 @@ app.post('/sendMessage', upload.single('image'), async (req, res) => {
             hasImage: !!req.file
         });
 
-        res.status(200).json({ message: 'Message sent successfully!' });
-    } catch (error) {
-        console.error('Error:', error.message);
-        res.status(500).json({ error: 'Failed to send message' });
-    }
+        try {
+            // Log to Google Sheets first
+            await logToGoogleSheets({
+                timestamp: new Date().toISOString(),
+                userEmail: req.body.userEmail || 'Unknown',
+                alias: req.body.alias || 'Anonymous',
+                replyTo: req.body.reply_to || '',
+                videoId: req.body.video_id || '',
+                queue: req.body.queue || '',
+                link: req.body.link || '',
+                message: req.body.message || '',
+                hasImage: !!req.file
+            });
+
+            // Then send to Lark
+            if (!(await tokenManager.ensure())) {
+                throw new Error('Failed to obtain Lark token');
+            }
+
+            const headers = {
+                'Authorization': `Bearer ${tokenManager.token}`,
+                'Content-Type': 'application/json'
+            };
+
+            // Send text message
+            const messageText = formatMessage(req.body);
+            await axios.post(
+                'https://open.feishu.cn/open-apis/message/v3/send',
+                {
+                    open_chat_id: OPEN_CHAT_ID,
+                    msg_type: 'text',
+                    content: { text: messageText }
+                },
+                { headers }
+            );
+
+            // Handle image if present
+            if (req.file) {
+                const formData = new FormData();
+                formData.append('image_type', 'message');
+                formData.append('image', fs.createReadStream(req.file.path));
+
+                const imageResponse = await axios.post(
+                    'https://open.feishu.cn/open-apis/im/v1/images',
+                    formData,
+                    {
+                        headers: {
+                            'Authorization': `Bearer ${tokenManager.token}`,
+                            ...formData.getHeaders()
+                        }
+                    }
+                );
+
+                await axios.post(
+                    'https://open.feishu.cn/open-apis/message/v3/send',
+                    {
+                        open_chat_id: OPEN_CHAT_ID,
+                        msg_type: 'image',
+                        content: { image_key: imageResponse.data.data.image_key }
+                    },
+                    { headers }
+                );
+
+                // Clean up uploaded file
+                fs.unlink(req.file.path, (err) => {
+                    if (err) console.error('File cleanup error:', err);
+                });
+            }
+
+            res.status(200).json({ message: 'Message sent successfully!' });
+        } catch (error) {
+            console.error('Error:', error);
+            res.status(500).json({ 
+                error: 'Failed to send message', 
+                details: error.message 
+            });
+        }
+    });
 });
+
+// Helper function to format message
+function formatMessage(body) {
+    let messageText = `${body.alias || 'Anonymous'}${body.reply_to ? ` → @${body.reply_to}` : ''}: ${body.message}`;
+    if (body.link) messageText += `\nLink: ${body.link}`;
+    if (body.video_id) messageText += `\nVideo ID: ${body.video_id}`;
+    if (body.queue) messageText += `\nQueue: ${body.queue}`;
+    return messageText;
+}
 
 app.listen(port, '0.0.0.0', () => {
     console.log(`Server running at http://0.0.0.0:${port}`);
