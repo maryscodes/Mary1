@@ -68,7 +68,7 @@ const messageQueue = {
     async process() {
         if (this.processing || this.queue.length === 0) return;
         this.processing = true;
-        
+
         while (this.queue.length > 0) {
             const task = this.queue.shift();
             try {
@@ -79,28 +79,38 @@ const messageQueue = {
             // Add delay between messages
             await new Promise(resolve => setTimeout(resolve, 200));
         }
-        
+
         this.processing = false;
     }
 };
 
 app.post('/sendMessage', upload.single('image'), async (req, res) => {
     try {
-        if (err) {
-            console.error('Upload error:', err);
-            return res.status(400).json({ error: err.message || 'Upload failed' });
+        // Handle multer upload errors
+        if (req.file === undefined && req.body.image) {
+            return res.status(400).json({ error: 'Invalid image' });
         }
-        try {
+        if (req.file === undefined && !req.body.image) {
+            // Handle other errors such as missing fields
+            if (!req.body.message) {
+                return res.status(400).json({ error: "Missing message field" });
+            }
+        }
+        if (req.fileValidationError) {
+            console.error('Upload error:', req.fileValidationError);
+            return res.status(400).json({ error: req.fileValidationError.message || 'Upload failed' });
+        }
+
         // Rate limiting check
         const ip = req.ip;
         const now = Date.now();
         const userRequests = rateLimit.current.get(ip) || [];
         const validRequests = userRequests.filter(time => now - time < rateLimit.windowMs);
-        
+
         if (validRequests.length >= rateLimit.maxRequests) {
             return res.status(429).json({ error: 'Too many requests' });
         }
-        
+
         validRequests.push(now);
         rateLimit.current.set(ip, validRequests);
 
@@ -164,12 +174,12 @@ app.post('/sendMessage', upload.single('image'), async (req, res) => {
 
             // Cleanup uploaded file immediately after processing
             await fs.promises.unlink(req.file.path).catch(console.error);
-            
+
             // Cleanup old files in uploads directory periodically
             const cleanupUploads = async () => {
                 const files = await fs.promises.readdir('uploads');
                 const now = Date.now();
-                
+
                 for (const file of files) {
                     try {
                         const filePath = `uploads/${file}`;
@@ -183,7 +193,7 @@ app.post('/sendMessage', upload.single('image'), async (req, res) => {
                     }
                 }
             };
-            
+
             // Schedule cleanup
             setTimeout(cleanupUploads, 0);
         }
