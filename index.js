@@ -84,8 +84,13 @@ const messageQueue = {
     }
 };
 
-app.post('/sendMessage', upload.single('image'), async (req, res) => {
-    try {
+app.post('/sendMessage', async (req, res) => {
+    upload(req, res, async (err) => {
+        if (err) {
+            console.error('Upload error:', err);
+            return res.status(400).json({ error: err.message || 'Upload failed' });
+        }
+        try {
         // Rate limiting check
         const ip = req.ip;
         const now = Date.now();
@@ -188,6 +193,7 @@ app.post('/sendMessage', upload.single('image'), async (req, res) => {
         console.error('Error:', error.message);
         res.status(500).json({ error: 'Failed to send message' });
     }
+    });
 });
 
 app.listen(port, '0.0.0.0', () => {

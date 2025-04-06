@@ -175,7 +175,13 @@
                     body: formData
                 });
 
-                const result = await response.json();
+                let result;
+                try {
+                    result = await response.json();
+                } catch (e) {
+                    throw new Error('Server response was not valid JSON');
+                }
+                
                 if (response.ok) {
                     // Display success message
                     document.getElementById('successMessage').style.display = 'block';
@@ -187,10 +193,11 @@
                     document.getElementById('previewBox').style.display = 'none';
                     document.getElementById('previewContent').innerText = '';
                 } else {
-                    alert('Failed to send message.');
+                    throw new Error(result.error || 'Failed to send message');
                 }
             } catch (error) {
                 console.error('Error:', error);
+                alert(error.message || 'Failed to send message');
             }
         });
     </script>
