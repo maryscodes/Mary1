@@ -3,19 +3,17 @@ const axios = require('axios');
 const multer = require('multer');
 const FormData = require('form-data');
 const fs = require('fs');
-const path = require('path');
 
 const app = express();
 const port = 5000;
 
-// Environment variables
+// Environment variables (recommended)
 const APP_ID = process.env.APP_ID || 'cli_a76cdc37ebf9900c';
 const APP_SECRET = process.env.APP_SECRET || 'oRXRWCjyt5EUKx5RNGltmeSOODjaxe7b';
 const OPEN_CHAT_ID = process.env.OPEN_CHAT_ID || 'oc_a19d2b2771fecbc58d1bf440550d942f';
-const SHEETS_URL = 'https://script.google.com/macros/s/AKfycbx5fV54P_VOYSBTozPPBOe7w0FCM4pN_yfPYkXMbsL4_GQ4Rn8omVp_N9ve2D-c75gk/exec';
 
-// Token management
-const tokenManager = {
+// Use a single token management system
+let tokenManager = {
     token: null,
     expiryTime: null,
     async ensure() {
@@ -26,13 +24,12 @@ const tokenManager = {
                     app_secret: APP_SECRET
                 });
 
-                if (response.data?.code !== 0) {
-                    throw new Error(response.data?.msg || 'Failed to get token');
+                if (response.data?.tenant_access_token) {
+                    this.token = response.data.tenant_access_token;
+                    this.expiryTime = Date.now() + (response.data.expire * 1000) - 30000;
+                    return true;
                 }
-
-                this.token = response.data.tenant_access_token;
-                this.expiryTime = Date.now() + (response.data.expire * 1000) - 30000;
-                return true;
+                return false;
             } catch (error) {
                 console.error('Token error:', error.message);
                 return false;
@@ -42,90 +39,83 @@ const tokenManager = {
     }
 };
 
-// Configure multer
+// Configure multer with file size limits
 const upload = multer({
     dest: 'uploads/',
     limits: {
-        fileSize: 5 * 1024 * 1024,
-        files: 1
-    },
-    fileFilter: (req, file, cb) => {
-        if (!file.originalname.match(/\.(jpg|jpeg|png|gif)$/i)) {
-            return cb(new Error('Only image files are allowed'));
-        }
-        cb(null, true);
+        fileSize: 5 * 1024 * 1024, // 5MB limit
+        files: 1,
+        parts: 2, // body + single file
+        fieldSize: 1024 * 1024 // 1MB limit for text fields
     }
-}).single('image');
+});
 
-// Clear uploads directory periodically
-setInterval(() => {
-    fs.readdir('uploads', (err, files) => {
-        if (err) return;
-        for (const file of files) {
-            fs.unlink(path.join('uploads', file), err => {
-                if (err) console.error('Error deleting file:', err);
-            });
-        }
-    });
-}, 3600000); // Clear every hour
-
+app.use(express.json({ limit: '1mb' }));
 app.use(express.static('attached_assets'));
 app.use('/uploads', express.static('uploads', { maxAge: '1h' }));
 
-// Rate limiting
+// Rate limiting configuration
 const rateLimit = {
-    windowMs: 60000,
+    windowMs: 60000, // 1 minute
     maxRequests: 30,
     current: new Map()
 };
 
-// Routes
-app.get('/', (req, res) => {
-    res.redirect('/login.html');
-});
-
-app.get('/form', (req, res) => {
-    res.sendFile(path.join(__dirname, 'attached_assets', 'index.html'));
-});
-
-app.post('/sendMessage', async (req, res) => {
-    upload(req, res, async (err) => {
-        try {
-            if (err instanceof multer.MulterError) {
-                return res.status(400).json({ error: `Upload error: ${err.message}` });
-            } else if (err) {
-                return res.status(400).json({ error: err.message });
+// Message queue for throttling
+const messageQueue = {
+    queue: [],
+    processing: false,
+    async process() {
+        if (this.processing || this.queue.length === 0) return;
+        this.processing = true;
+        
+        while (this.queue.length > 0) {
+            const task = this.queue.shift();
+            try {
+                await task();
+            } catch (error) {
+                console.error('Queue processing error:', error);
             }
+            // Add delay between messages
+            await new Promise(resolve => setTimeout(resolve, 200));
+        }
+        
+        this.processing = false;
+    }
+};
 
-            // Validate required fields
-            if (!req.body.message?.trim()) {
-                return res.status(400).json({ error: 'Message is required' });
-            }
+app.post('/sendMessage', upload.single('image'), async (req, res) => {
+    try {
+        // Rate limiting check
+        const ip = req.ip;
+        const now = Date.now();
+        const userRequests = rateLimit.current.get(ip) || [];
+        const validRequests = userRequests.filter(time => now - time < rateLimit.windowMs);
+        
+        if (validRequests.length >= rateLimit.maxRequests) {
+            return res.status(429).json({ error: 'Too many requests' });
+        }
+        
+        validRequests.push(now);
+        rateLimit.current.set(ip, validRequests);
 
-            // Rate limiting
-            const ip = req.ip;
-            const now = Date.now();
-            const userRequests = rateLimit.current.get(ip) || [];
-            const validRequests = userRequests.filter(time => now - time < rateLimit.windowMs);
+        if (!(await tokenManager.ensure())) {
+            return res.status(401).json({ error: 'Failed to obtain token' });
+        }
 
-            if (validRequests.length >= rateLimit.maxRequests) {
-                return res.status(429).json({ error: 'Too many requests' });
-            }
+        const { alias = 'Anonymous', message, video_id, link, reply_to, queue } = req.body;
+        let messageText = `${alias}${reply_to?.trim() ? ` → @${reply_to}` : ''}: ${message}`;
+        if (link) messageText += `\nLink: ${link}`;
+        if (video_id) messageText += `\nVideo ID: ${video_id}`;
+        if (queue?.trim()) messageText += `\nQueue: ${queue}`;
 
-            validRequests.push(now);
-            rateLimit.current.set(ip, validRequests);
+        const headers = {
+            'Authorization': `Bearer ${tokenManager.token}`,
+            'Content-Type': 'application/json'
+        };
 
-            if (!(await tokenManager.ensure())) {
-                return res.status(401).json({ error: 'Failed to obtain token' });
-            }
-
-            const messageText = formatMessage(req.body);
-            const headers = {
-                'Authorization': `Bearer ${tokenManager.token}`,
-                'Content-Type': 'application/json'
-            };
-
-            // Send text message
+        // Queue the message sending
+        messageQueue.queue.push(async () => {
             await axios.post(
                 'https://open.feishu.cn/open-apis/message/v3/send',
                 {
@@ -135,111 +125,70 @@ app.post('/sendMessage', async (req, res) => {
                 },
                 { headers }
             );
+        });
 
-            // Handle image if present
-            if (req.file) {
-                try {
-                    const formData = new FormData();
-                    formData.append('image_type', 'message');
-                    formData.append('image', fs.createReadStream(req.file.path));
+        // Start processing queue if not already processing
+        messageQueue.process();
 
-                    const imageResponse = await axios.post(
-                        'https://open.feishu.cn/open-apis/im/v1/images',
-                        formData,
-                        {
-                            headers: {
-                                'Authorization': `Bearer ${tokenManager.token}`,
-                                ...formData.getHeaders()
-                            }
-                        }
-                    );
+        // Handle image if present
+        if (req.file) {
+            const formData = new FormData();
+            formData.append('image_type', 'message');
+            formData.append('image', fs.createReadStream(req.file.path));
 
-                    if (imageResponse.data?.code === 0) {
-                        await axios.post(
-                            'https://open.feishu.cn/open-apis/message/v3/send',
-                            {
-                                open_chat_id: OPEN_CHAT_ID,
-                                msg_type: 'image',
-                                content: { image_key: imageResponse.data.data.image_key }
-                            },
-                            { headers }
-                        );
-                    }
-                } finally {
-                    // Clean up uploaded file
-                    fs.unlink(req.file.path, (err) => {
-                        if (err) console.error('File cleanup error:', err);
-                    });
-                }
-            }
-
-            // Log to Google Sheets
-            try {
-                const sheetsData = {
-                    timestamp: new Date().toISOString(),
-                    userEmail: req.body.userEmail,
-                    alias: req.body.alias || 'Anonymous',
-                    replyTo: req.body.reply_to,
-                    videoId: req.body.video_id,
-                    queue: req.body.queue,
-                    link: req.body.link,
-                    message: req.body.message,
-                    hasImage: !!req.file
-                };
-
-                await axios({
-                    method: 'post',
-                    url: SHEETS_URL,
-                    data: new URLSearchParams(sheetsData).toString(),
+            const imageResponse = await axios.post(
+                'https://open.feishu.cn/open-apis/im/v1/images',
+                formData,
+                {
                     headers: {
-                        'Content-Type': 'application/x-www-form-urlencoded'
+                        'Authorization': `Bearer ${tokenManager.token}`,
+                        ...formData.getHeaders()
                     }
-                });
-            } catch (error) {
-                console.error('Google Sheets logging error:', error.response?.data || error.message);
-                // Don't fail the request if sheets logging fails
-            }
-
-            res.status(200).json({ message: 'Message sent successfully!' });
-        } catch (error) {
-            console.error('Error:', error);
-            res.status(error.response?.status || 500).json({
-                error: error.response?.data?.msg || error.message || 'Failed to send message'
-            });
-        }
-    });
-});
-
-// Helper function to format message
-function formatMessage(body) {
-    let text = `${body.alias || 'Anonymous'}${body.reply_to ? ` → @${body.reply_to}` : ''}: ${body.message}`;
-    if (body.link) text += `\nLink: ${body.link}`;
-    if (body.video_id) text += `\nVideo ID: ${body.video_id}`;
-    if (body.queue) text += `\nQueue: ${body.queue}`;
-    return text;
-}
-
-// Cleanup old files periodically
-setInterval(async () => {
-    try {
-        const files = await fs.promises.readdir('uploads');
-        const now = Date.now();
-
-        for (const file of files) {
-            try {
-                const filePath = path.join('uploads', file);
-                const stats = await fs.promises.stat(filePath);
-                if (now - stats.mtime.getTime() > 3600000) {
-                    await fs.promises.unlink(filePath);
                 }
-            } catch (error) {
-                console.error('File cleanup error:', error);
-            }
+            );
+
+            await axios.post(
+                'https://open.feishu.cn/open-apis/message/v3/send',
+                {
+                    open_chat_id: OPEN_CHAT_ID,
+                    msg_type: 'image',
+                    content: { image_key: imageResponse.data.data.image_key }
+                },
+                { headers }
+            );
+
+            // Cleanup uploaded file immediately after processing
+            await fs.promises.unlink(req.file.path).catch(console.error);
+            
+            // Cleanup old files in uploads directory periodically
+            const cleanupUploads = async () => {
+                const files = await fs.promises.readdir('uploads');
+                const now = Date.now();
+                
+                for (const file of files) {
+                    try {
+                        const filePath = `uploads/${file}`;
+                        const stats = await fs.promises.stat(filePath);
+                        // Remove files older than 1 hour
+                        if (now - stats.mtime.getTime() > 3600000) {
+                            await fs.promises.unlink(filePath);
+                        }
+                    } catch (error) {
+                        console.error('Cleanup error:', error);
+                    }
+                }
+            };
+            
+            // Schedule cleanup
+            setTimeout(cleanupUploads, 0);
         }
+
+        res.status(200).json({ message: 'Message sent successfully!' });
     } catch (error) {
-        console.error('Directory cleanup error:', error);
+        console.error('Error:', error.message);
+        res.status(500).json({ error: 'Failed to send message' });
     }
-}, 3600000);
+});
 
 app.listen(port, '0.0.0.0', () => {
     console.log(`Server running at http://0.0.0.0:${port}`);
