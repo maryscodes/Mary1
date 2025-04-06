@@ -57,6 +57,18 @@ const upload = multer({
     }
 }).single('image');
 
+// Clear uploads directory periodically
+setInterval(() => {
+    fs.readdir('uploads', (err, files) => {
+        if (err) return;
+        for (const file of files) {
+            fs.unlink(path.join('uploads', file), err => {
+                if (err) console.error('Error deleting file:', err);
+            });
+        }
+    });
+}, 3600000); // Clear every hour
+
 app.use(express.static('attached_assets'));
 app.use('/uploads', express.static('uploads', { maxAge: '1h' }));
 
