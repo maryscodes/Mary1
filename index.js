@@ -43,7 +43,7 @@ let tokenManager = {
 const upload = multer({
     dest: 'uploads/',
     limits: {
-        fileSize: 2 * 1024 * 1024, // 2MB limit
+        fileSize: 5 * 1024 * 1024, // 5MB limit
         files: 1,
         parts: 2,
         fieldSize: 512 * 1024, // 512KB limit for text fields
