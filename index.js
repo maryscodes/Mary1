@@ -43,7 +43,10 @@ let tokenManager = {
 const upload = multer({
     dest: 'uploads/',
     limits: {
-        fileSize: 5 * 1024 * 1024 // 5MB limit
+        fileSize: 5 * 1024 * 1024, // 5MB limit
+        files: 1,
+        parts: 2, // body + single file
+        fieldSize: 1024 * 1024 // 1MB limit for text fields
     }
 });
 
@@ -51,8 +54,51 @@ app.use(express.json({ limit: '1mb' }));
 app.use(express.static('attached_assets'));
 app.use('/uploads', express.static('uploads', { maxAge: '1h' }));
 
+// Rate limiting configuration
+const rateLimit = {
+    windowMs: 60000, // 1 minute
+    maxRequests: 30,
+    current: new Map()
+};
+
+// Message queue for throttling
+const messageQueue = {
+    queue: [],
+    processing: false,
+    async process() {
+        if (this.processing || this.queue.length === 0) return;
+        this.processing = true;
+        
+        while (this.queue.length > 0) {
+            const task = this.queue.shift();
+            try {
+                await task();
+            } catch (error) {
+                console.error('Queue processing error:', error);
+            }
+            // Add delay between messages
+            await new Promise(resolve => setTimeout(resolve, 200));
+        }
+        
+        this.processing = false;
+    }
+};
+
 app.post('/sendMessage', upload.single('image'), async (req, res) => {
     try {
+        // Rate limiting check
+        const ip = req.ip;
+        const now = Date.now();
+        const userRequests = rateLimit.current.get(ip) || [];
+        const validRequests = userRequests.filter(time => now - time < rateLimit.windowMs);
+        
+        if (validRequests.length >= rateLimit.maxRequests) {
+            return res.status(429).json({ error: 'Too many requests' });
+        }
+        
+        validRequests.push(now);
+        rateLimit.current.set(ip, validRequests);
+
         if (!(await tokenManager.ensure())) {
             return res.status(401).json({ error: 'Failed to obtain token' });
         }
@@ -68,16 +114,21 @@ app.post('/sendMessage', upload.single('image'), async (req, res) => {
             'Content-Type': 'application/json'
         };
 
-        // Send text message
-        await axios.post(
-            'https://open.feishu.cn/open-apis/message/v3/send',
-            {
-                open_chat_id: OPEN_CHAT_ID,
-                msg_type: 'text',
-                content: { text: messageText }
-            },
-            { headers }
-        );
+        // Queue the message sending
+        messageQueue.queue.push(async () => {
+            await axios.post(
+                'https://open.feishu.cn/open-apis/message/v3/send',
+                {
+                    open_chat_id: OPEN_CHAT_ID,
+                    msg_type: 'text',
+                    content: { text: messageText }
+                },
+                { headers }
+            );
+        });
+
+        // Start processing queue if not already processing
+        messageQueue.process();
 
         // Handle image if present
         if (req.file) {
@@ -106,7 +157,30 @@ app.post('/sendMessage', upload.single('image'), async (req, res) => {
                 { headers }
             );
 
-            fs.unlink(req.file.path, () => {});
+            // Cleanup uploaded file immediately after processing
+            await fs.promises.unlink(req.file.path).catch(console.error);
+            
+            // Cleanup old files in uploads directory periodically
+            const cleanupUploads = async () => {
+                const files = await fs.promises.readdir('uploads');
+                const now = Date.now();
+                
+                for (const file of files) {
+                    try {
+                        const filePath = `uploads/${file}`;
+                        const stats = await fs.promises.stat(filePath);
+                        // Remove files older than 1 hour
+                        if (now - stats.mtime.getTime() > 3600000) {
+                            await fs.promises.unlink(filePath);
+                        }
+                    } catch (error) {
+                        console.error('Cleanup error:', error);
+                    }
+                }
+            };
+            
+            // Schedule cleanup
+            setTimeout(cleanupUploads, 0);
         }
 
         res.status(200).json({ message: 'Message sent successfully!' });
