@@ -161,7 +161,7 @@ app.post('/sendMessage', async (req, res) => {
 
             // Log to Google Sheets
             try {
-                await axios.post(SHEETS_URL, {
+                const sheetsData = {
                     timestamp: new Date().toISOString(),
                     userEmail: req.body.userEmail,
                     alias: req.body.alias || 'Anonymous',
@@ -171,9 +171,18 @@ app.post('/sendMessage', async (req, res) => {
                     link: req.body.link,
                     message: req.body.message,
                     hasImage: !!req.file
+                };
+
+                await axios({
+                    method: 'post',
+                    url: SHEETS_URL,
+                    data: new URLSearchParams(sheetsData).toString(),
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded'
+                    }
                 });
             } catch (error) {
-                console.error('Google Sheets logging error:', error);
+                console.error('Google Sheets logging error:', error.response?.data || error.message);
                 // Don't fail the request if sheets logging fails
             }
 

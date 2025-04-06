@@ -232,18 +232,7 @@
                 }
 
                 // Then send to Google Sheets
-                const sheetsFormData = new FormData();
-                for (let [key, value] of formData.entries()) {
-                    if (key !== 'image') {
-                        sheetsFormData.append(key, value);
-                    }
-                }
-
-                await fetch('https://script.google.com/macros/s/AKfycbx5fV54P_VOYSBTozPPBOe7w0FCM4pN_yfPYkXMbsL4_GQ4Rn8omVp_N9ve2D-c75gk/exec', {
-                    method: 'POST',
-                    mode: 'no-cors',
-                    body: sheetsFormData
-                });
+                // Google Sheets submission is now handled by the backend
 
                 // Show success message and reset form
                 document.getElementById('successMessage').style.display = 'block';
