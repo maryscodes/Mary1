@@ -3,6 +3,7 @@ const axios = require('axios');
 const multer = require('multer');
 const FormData = require('form-data');
 const fs = require('fs');
+const path = require('path');
 
 const app = express();
 const port = 5000;
@@ -57,7 +58,26 @@ const upload = multer({
 });
 
 app.use(express.json({ limit: '1mb' }));
+// Middleware to check login
+const checkLogin = (req, res, next) => {
+    if (req.path === '/' || req.path === '/login.html') {
+        next();
+    } else {
+        next();  // In production, implement proper session check
+    }
+};
+
+app.use(checkLogin);
 app.use(express.static('attached_assets'));
+
+// Routes
+app.get('/', (req, res) => {
+    res.redirect('/login.html');
+});
+
+app.get('/form', (req, res) => {
+    res.sendFile(path.join(__dirname, 'attached_assets', 'index.html'));
+});
 app.use('/uploads', express.static('uploads', { maxAge: '1h' }));
 
 // Rate limiting configuration
@@ -109,6 +129,17 @@ setInterval(() => {
         }
     }
 }, 60000);
+
+async function logToGoogleSheets(data) {
+    try {
+        await axios.post('https://script.google.com/macros/s/AKfycbx5fV54P_VOYSBTozPPBOe7w0FCM4pN_yfPYkXMbsL4_GQ4Rn8omVp_N9ve2D-c75gk/exec', {
+            timestamp: new Date().toISOString(),
+            ...data
+        });
+    } catch (error) {
+        console.error('Google Sheets logging error:', error);
+    }
+}
 
 app.post('/sendMessage', upload.single('image'), async (req, res) => {
     try {
@@ -208,6 +239,19 @@ app.post('/sendMessage', upload.single('image'), async (req, res) => {
             // Schedule cleanup
             setTimeout(cleanupUploads, 0);
         }
+
+        // Log to Google Sheets
+        await logToGoogleSheets({
+            timestamp: new Date().toISOString(),
+            userEmail: req.body.userEmail,
+            alias: req.body.alias || 'Anonymous',
+            replyTo: req.body.reply_to,
+            videoId: req.body.video_id,
+            queue: req.body.queue,
+            link: req.body.link,
+            message: req.body.message,
+            hasImage: !!req.file
+        });
 
         res.status(200).json({ message: 'Message sent successfully!' });
     } catch (error) {
